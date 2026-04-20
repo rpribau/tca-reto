@@ -1,0 +1,25 @@
+# Ignorar todo el contenido de la carpeta data
+data/*
+
+# Pero mantener la estructura de carpetas (requiere archivos .gitkeep en cada subcarpeta)
+!data/**/.gitkeep
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Entornos virtuales
+venv/
+.venv/
+env/
+.env
+
+# Jupyter notebooks
+.ipynb_checkpoints
+
+# Kedro / Logs
+logs/
+info.log
+errors.log

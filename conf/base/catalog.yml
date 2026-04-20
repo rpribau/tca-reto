@@ -1,0 +1,36 @@
+# Definición de las fuentes de datos según el diccionario de variables
+hospac:
+  type: pandas.ParquetDataSet
+  filepath: data/01_raw/hospac.parquet
+
+hosagd:
+  type: pandas.ParquetDataSet
+  filepath: data/01_raw/hosagd.parquet
+
+hosmpi:
+  type: pandas.ParquetDataSet
+  filepath: data/01_raw/hosmpi.parquet
+
+notamedicaurg:
+  type: pandas.ParquetDataSet
+  filepath: data/01_raw/notamedicaurg.parquet
+
+triage:
+  type: pandas.ParquetDataSet
+  filepath: data/01_raw/triage.parquet
+
+trained_model_his05:
+  type: pickle.PickleDataSet
+  filepath: data/06_models/trained_model_his05.pkl
+
+evaluation_metrics_his05:
+  type: json.JSONDataSet
+  filepath: data/09_tracking/evaluation_metrics_his05.json
+
+trained_model_his10:
+  type: pickle.PickleDataSet
+  filepath: data/06_models/trained_model_his10.pkl
+
+evaluation_metrics_his10:
+  type: json.JSONDataSet
+  filepath: data/09_tracking/evaluation_metrics_his10.json
