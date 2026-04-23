@@ -34,3 +34,13 @@ trained_model_his10:
 evaluation_metrics_his10:
   type: json.JSONDataSet
   filepath: data/09_tracking/evaluation_metrics_his10.json
+
+# Tabla maestra con variables exógenas (Triage + Demanda)
+master_table_his05:
+  type: pandas.ParquetDataSet
+  filepath: data/03_primary/master_table_his05.parquet
+
+# El modelo entrenado que cargará la API
+trained_model_his05:
+  type: pickle.PickleDataSet
+  filepath: data/06_models/trained_model_his05.pkl
