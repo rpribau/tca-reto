@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException 
 from pathlib import Path
 import pandas as pd
 from assist_v10.api.schemas import NoShowRequest, WaitTimeRequest, NoShowResponse, WaitTimeResponse
