@@ -19,6 +19,30 @@ triage:
   type: pandas.ParquetDataSet
   filepath: data/01_raw/triage.parquet
 
+processed_hospac:
+  type: pandas.ParquetDataSet
+  filepath: data/02_intermediate/processed_hospac.parquet
+
+processed_hosagd:
+  type: pandas.ParquetDataSet
+  filepath: data/02_intermediate/processed_hosagd.parquet
+
+processed_hosmpi:
+  type: pandas.ParquetDataSet
+  filepath: data/02_intermediate/processed_hosmpi.parquet
+
+processed_triage:
+  type: pandas.ParquetDataSet
+  filepath: data/02_intermediate/processed_triage.parquet
+
+processed_notamedicaurg:
+  type: pandas.ParquetDataSet
+  filepath: data/02_intermediate/processed_notamedicaurg.parquet
+
+preprocessed_data_his10:
+  type: pandas.ParquetDataSet
+  filepath: data/03_primary/preprocessed_data_his10.parquet
+
 trained_model_his05:
   type: pickle.PickleDataSet
   filepath: data/06_models/trained_model_his05.pkl
@@ -39,8 +63,3 @@ evaluation_metrics_his10:
 master_table_his05:
   type: pandas.ParquetDataSet
   filepath: data/03_primary/master_table_his05.parquet
-
-# El modelo entrenado que cargará la API
-trained_model_his05:
-  type: pickle.PickleDataSet
-  filepath: data/06_models/trained_model_his05.pkl
