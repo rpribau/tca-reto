@@ -1,7 +1,6 @@
-# Ignorar todo el contenido de la carpeta data
-data/*
-
-# Pero mantener la estructura de carpetas (requiere archivos .gitkeep en cada subcarpeta)
+# Ignorar archivos dentro de data, pero mantener estructura de carpetas con .gitkeep
+data/**
+!data/**/
 !data/**/.gitkeep
 
 # Python
