@@ -1,3 +1,14 @@
+"""
+Data Engineering nodes for Assist v10.
+
+This module prepares the base datasets for:
+- HIS-05: saturation / wait-time forecasting.
+- HIS-10: no-show classification.
+
+The goal of this pipeline is not to train models, but to clean raw hospital tables
+and create modeling-ready datasets for the Data Science pipelines.
+"""
+
 from __future__ import annotations
 
 from typing import Iterable
@@ -14,8 +25,11 @@ def _strip_string_columns(df: pd.DataFrame) -> pd.DataFrame:
     """
     Strip leading/trailing spaces from text columns and convert empty strings to NA.
     """
+
     df = df.copy()
 
+    # Raw Assist tables contain many padded strings and blank values.
+    # This standardizes text fields before joins, filtering, and feature creation.
     for col in df.columns:
         if df[col].dtype == "object" or str(df[col].dtype).startswith("string"):
             df[col] = df[col].astype("string").str.strip().replace("", pd.NA)
@@ -32,11 +46,17 @@ def _standardize_time_hhmmss(series: pd.Series) -> pd.Series:
     - '93000'  -> '093000'
     - '093000' -> '093000'
     """
+
+    # Raw time columns are not always consistent.
+    # Some values come as HHMM, others as HHMMSS, and some may lose leading zeros.
     s = series.astype("string").str.strip().replace("", pd.NA)
     s = s.str.replace(r"\.0$", "", regex=True)
     s = s.str.replace(r"\D", "", regex=True)
 
     def fix_time(value):
+        """
+        Normalize one raw time value into a six-character HHMMSS string.
+        """
         if pd.isna(value):
             return pd.NA
 
@@ -69,6 +89,9 @@ def _parse_datetime_from_date_time(
     Parse datetime from date column YYYYMMDD and time column HHMMSS/HHMM.
     Invalid values become NaT.
     """
+
+    # If a table does not contain the expected date/time columns,
+    # return NaT instead of breaking the pipeline.
     if date_col not in df.columns or time_col not in df.columns:
         return pd.Series(pd.NaT, index=df.index)
 
@@ -85,14 +108,27 @@ def _parse_datetime_from_date_time(
 
 def _safe_numeric(series: pd.Series) -> pd.Series:
     """
-    Convert a series to numeric, coercing invalid values to NaN.
+    Convert a column to numeric values.
+
+    Invalid values are converted to NaN instead of breaking the pipeline.
+    Numeric missing values are not imputed here because imputation should be
+    decided later by the Data Science/modeling step.
     """
     return pd.to_numeric(series.astype("string").str.strip(), errors="coerce")
 
 
 def _add_temporal_features(df: pd.DataFrame, datetime_col: str, prefix: str = "") -> pd.DataFrame:
     """
-    Add basic temporal features from a datetime column.
+    Add calendar-based features from a datetime column.
+
+    Created features:
+    - hour
+    - day_of_week
+    - day
+    - month
+    - is_weekend
+
+    These features help models capture hourly, daily, and weekly patterns.
     """
     df = df.copy()
 
@@ -113,6 +149,9 @@ def _fill_categorical_missing(df: pd.DataFrame, columns: Iterable[str]) -> pd.Da
     """
     df = df.copy()
 
+    # For categorical variables, missing values are kept as an explicit category.
+    # This is useful for tree-based models such as CatBoost.
+    # Numeric imputation is intentionally not done here; that belongs to modeling decisions.
     for col in columns:
         if col in df.columns:
             df[col] = df[col].astype("string").fillna("UNKNOWN")
@@ -132,15 +171,21 @@ def clean_hospac(hospac: pd.DataFrame) -> pd.DataFrame:
     """
     df = _strip_string_columns(hospac)
 
+    # Create normalized join keys.
+    # These keys are later used to connect HOSPAC with HOSAGD without duplicating appointments.
     df["area_key"] = df["p_area"].astype("string").str.strip()
     df["cve_num_key"] = df["p_res_cve_num"].astype("string").str.strip()
     df["cve_mbo_key"] = df["p_res_cve_mbo"].astype("string").str.strip()
     df["p_num_exp_key"] = df["p_num_exp"].astype("string").str.strip()
 
+    # Parse date/time fields into real datetime columns.
+    # These are useful for lead-time features and operational timing analysis.
     df["reservation_datetime"] = _parse_datetime_from_date_time(df, "p_res_fec", "p_res_hra")
     df["arrival_datetime"] = _parse_datetime_from_date_time(df, "p_fec_lld", "p_hra_lld")
     df["registration_datetime"] = _parse_datetime_from_date_time(df, "p_fec_reg", "p_hra_reg")
 
+    # Keep only columns required for joins, feature creation, or downstream modeling.
+    # This reduces noise from raw operational tables with many unused fields.
     useful_cols = [
         "area_key",
         "cve_num_key",
@@ -165,7 +210,9 @@ def clean_hosagd(hosagd: pd.DataFrame) -> pd.DataFrame:
     """
     Clean HOSAGD appointment schedule table.
 
-    This is the main table for HIS-10 No-Show Guard.
+    This is the main table for HIS-10 No-Show Guard because it contains
+    appointment scheduling information and the raw asistencia field used to
+    build the no_show target.
     """
     df = _strip_string_columns(hosagd)
 
@@ -173,6 +220,8 @@ def clean_hosagd(hosagd: pd.DataFrame) -> pd.DataFrame:
     df["cve_num_key"] = df["cve_num"].astype("string").str.strip()
     df["cve_mbo_key"] = df["cve_mbo"].astype("string").str.strip()
 
+    # Build the appointment timestamp and temporal features.
+    # These features are available before the appointment and are safe for no-show prediction.
     df["appointment_datetime"] = _parse_datetime_from_date_time(df, "a_fecha", "hra_ini")
     df = _add_temporal_features(df, "appointment_datetime", prefix="appointment")
 
@@ -180,10 +229,15 @@ def clean_hosagd(hosagd: pd.DataFrame) -> pd.DataFrame:
 
     df["asistencia_clean"] = df["asistencia"].astype("string").str.strip().replace("", pd.NA)
 
-    # Target for HIS-10:
-    # A = attended, I = no-show / inasistencia.
+    # HIS-10 target construction:
+    # A = attended appointment.
+    # I = no-show / missed appointment.
+    # Missing asistencia values are NOT imputed because the real outcome is unknown.
+    # Those rows are excluded later from the initial training dataset.
     df["no_show"] = df["asistencia_clean"].map({"A": 0, "I": 1})
 
+    # Keep only columns required for joins, feature creation, or downstream modeling.
+    # This reduces noise from raw operational tables with many unused fields.
     useful_cols = [
         "area_key",
         "cve_num_key",
@@ -225,8 +279,11 @@ def clean_hosmpi(hosmpi: pd.DataFrame) -> pd.DataFrame:
     """
     df = _strip_string_columns(hosmpi)
 
+    # Normalize patient ID to join demographic information with HOSPAC encounters.
     df["m_num_exp_key"] = df["m_num_exp"].astype("string").str.strip()
 
+    # Age is converted to numeric, but missing values are not imputed here.
+    # The Data Science pipeline can decide whether to impute, filter, or let the model handle NaN.
     if "m_edad" in df.columns:
         df["m_edad_num"] = _safe_numeric(df["m_edad"])
 
@@ -237,6 +294,8 @@ def clean_hosmpi(hosmpi: pd.DataFrame) -> pd.DataFrame:
             errors="coerce",
         )
 
+    # Keep only columns required for joins, feature creation, or downstream modeling.
+    # This reduces noise from raw operational tables with many unused fields.
     useful_cols = [
         "m_num_exp_key",
         "m_status",
@@ -266,9 +325,12 @@ def clean_triage(triage: pd.DataFrame) -> pd.DataFrame:
     df["expediente_key"] = df["Expediente"].astype("string").str.strip()
     df["clave_ingreso_key"] = df["ClaveIngreso"].astype("string").str.strip()
 
+    # Triage records are used to enrich HIS-05 with emergency severity volume by hour.
     df["triage_datetime"] = _parse_datetime_from_date_time(df, "Fecha", "Hora")
     df["triage_clean"] = df["Triage"].astype("string").str.strip().replace("", pd.NA)
 
+    # Keep only columns required for joins, feature creation, or downstream modeling.
+    # This reduces noise from raw operational tables with many unused fields.
     useful_cols = [
         "expediente_key",
         "clave_ingreso_key",
@@ -294,9 +356,12 @@ def clean_notamedicaurg(notamedicaurg: pd.DataFrame) -> pd.DataFrame:
     """
     Clean NOTAMEDICAURG emergency medical notes table.
 
-    Since AtMed_Hora is empty in the raw data, this node creates a wait-time proxy:
+    This table is used for HIS-05 because it contains emergency arrival and note
+    timestamps. Since AtMed_Hora is empty in the raw data, this node creates a
+    wait-time proxy:
     wait_proxy_min = note_datetime - arrival_datetime.
     """
+
     df = _strip_string_columns(notamedicaurg)
 
     df["expediente_key"] = df["Expediente"].astype("string").str.strip()
@@ -306,16 +371,28 @@ def clean_notamedicaurg(notamedicaurg: pd.DataFrame) -> pd.DataFrame:
     df["note_datetime"] = _parse_datetime_from_date_time(df, "Fecha", "Hora")
     df["destination_datetime"] = _parse_datetime_from_date_time(df, "Destino_Fecha", "Destino_Hora")
 
+    # AtMed_Hora is empty in the raw NOTAMEDICAURG table, so the official
+    # medical attention timestamp is unavailable.
+    #
+    # For HIS-05, we create a wait-time proxy:
+    # wait_proxy_min = note_datetime - arrival_datetime
+    #
+    # This proxy should be interpreted as an approximation of operational delay,
+    # not as the official clinical waiting time.
     df["wait_proxy_min"] = (
         df["note_datetime"] - df["arrival_datetime"]
     ).dt.total_seconds() / 60
 
+    # Keep only plausible proxy values for aggregation.
+    # Negative values and waits longer than 24 hours are treated as invalid.
     df["valid_wait_proxy"] = (
         df["wait_proxy_min"].notna()
         & (df["wait_proxy_min"] >= 0)
         & (df["wait_proxy_min"] <= 24 * 60)
     ).astype(int)
 
+    # Keep only columns required for joins, feature creation, or downstream modeling.
+    # This reduces noise from raw operational tables with many unused fields.
     useful_cols = [
         "expediente_key",
         "clave_ingreso_key",
@@ -356,9 +433,15 @@ def create_his10_base(
     encounters = processed_hospac.copy()
     patients = processed_hosmpi.copy()
 
+    # Correct join key between HOSAGD and HOSPAC:
+    # area + cve_num + cve_mbo.
+    #
+    # During exploration, joining only by cve_num + cve_mbo duplicated appointments
+    # because those keys repeat across hospital areas/sites.
     key_cols = ["area_key", "cve_num_key", "cve_mbo_key"]
 
-    # HOSPAC must be unique by area + reservation keys to avoid duplicating appointments.
+    # Ensure one HOSPAC record per appointment key.
+    # This protects the HIS-10 dataset from duplicated appointment rows.
     encounters_by_key = (
         encounters
         .sort_values(key_cols + ["registration_datetime"], na_position="last")
@@ -380,17 +463,29 @@ def create_his10_base(
     )
 
     # Lead time: days between reservation creation and appointment date.
+    # This is available before the appointment and can be useful for no-show prediction.
     dataset["lead_time_days"] = (
         dataset["appointment_datetime"] - dataset["reservation_datetime"]
     ).dt.total_seconds() / (60 * 60 * 24)
 
     dataset.loc[dataset["lead_time_days"] < 0, "lead_time_days"] = np.nan
 
-    # Keep only rows with a known target.
+    # Keep only appointments with known attendance labels.
+    # Unknown labels are excluded instead of imputed to avoid creating artificial targets.
     dataset = dataset[dataset["no_show"].notna()].copy()
     dataset["no_show"] = dataset["no_show"].astype(int)
 
-    # Avoid using post-event columns such as actual arrival/registration as predictive features.
+    # Feature selection for the initial HIS-10 MVP.
+    #
+    # We avoid post-event variables such as actual arrival or registration datetime,
+    # because they would not be available before the appointment and could create data leakage.
+    #
+    # Note: p_status should be reviewed with the Data Science team. If it represents
+    # a post-appointment state, it should be removed from the model features.
+    #
+    # CONSULTAEXTERNA was explored as an additional attendance confirmation source.
+    # It is not included in the MVP because it only matched a small fraction of HOSAGD
+    # appointments and recovered very few missing asistencia labels.
     feature_cols = [
         "area",
         "med",
@@ -430,6 +525,8 @@ def create_his10_base(
         if col != "no_show" and (dataset[col].dtype == "object" or str(dataset[col].dtype).startswith("string"))
     ]
 
+    # Fill only categorical missing values as UNKNOWN.
+    # Numeric missing values are preserved for the modeling step.
     dataset = _fill_categorical_missing(dataset, categorical_cols)
 
     return dataset.reset_index(drop=True)
@@ -443,17 +540,31 @@ def create_his05_master_table(
     Create HIS-05 hourly master table for saturation / wait-time forecasting.
 
     Output grain: one row per hour.
-    Main target compatibility column: tiempo_espera.
-    Additional operational target: pacientes_llegando.
+
+    Main operational target:
+    - pacientes_llegando: number of emergency arrivals per hour.
+
+    Compatibility target:
+    - tiempo_espera: average wait-time proxy per hour.
+
+    Important: tiempo_espera is not the official waiting time. It is based on
+    wait_proxy_min from NOTAMEDICAURG because AtMed_Hora is unavailable.
     """
+
     urg = processed_notamedicaurg.copy()
     triage = processed_triage.copy()
 
     urg = urg[urg["arrival_datetime"].notna()].copy()
+
+    # Aggregate emergency arrivals at hourly level.
+    # This is the modeling grain for the initial HIS-05 forecasting dataset.
     urg["timestamp"] = urg["arrival_datetime"].dt.floor("h")
 
+    # Only valid wait-time proxy values are used when aggregating waiting-time metrics.
+    # Invalid proxy values still allow arrivals to contribute to demand counts.
     valid_wait = urg["valid_wait_proxy"] == 1
 
+    # Build hourly demand and wait-time proxy metrics from emergency notes.
     hourly_urg = (
         urg.groupby("timestamp")
         .agg(
@@ -465,6 +576,7 @@ def create_his05_master_table(
         .reset_index()
     )
 
+    # Add hourly triage counts as exogenous variables for saturation forecasting.
     if not triage.empty and "triage_datetime" in triage.columns:
         triage = triage[triage["triage_datetime"].notna()].copy()
         triage["timestamp"] = triage["triage_datetime"].dt.floor("h")
@@ -499,6 +611,7 @@ def create_his05_master_table(
     for col in count_cols:
         master[col] = master[col].fillna(0)
 
+    # Add calendar features that can help capture daily and weekly demand patterns.
     master = _add_temporal_features(master, "timestamp")
 
     master = master.sort_values("timestamp").reset_index(drop=True)
@@ -507,8 +620,11 @@ def create_his05_master_table(
 
 
 # =========================================================
-# Backward-compatible wrappers for older placeholder code
+# Backward-compatible wrappers
 # =========================================================
+# These functions keep compatibility with older placeholder code in the repo.
+# The actual Data Engineering pipeline should use the clean_* nodes and the
+# create_his10_base / create_his05_master_table functions above.
 
 def preprocess_hospital_data(hospac: pd.DataFrame, hosmpi: pd.DataFrame) -> pd.DataFrame:
     """
@@ -529,7 +645,9 @@ def create_feature_table_his10(primary_df: pd.DataFrame, hosagd: pd.DataFrame) -
     """
     Backward-compatible placeholder wrapper.
 
-    Prefer create_his10_base() in the actual data engineering pipeline.
+    The primary_df argument is kept only to preserve the old function signature.
+    This function does not create the full HIS-10 modeling dataset.
+    Prefer create_his10_base() in the actual Data Engineering pipeline.
     """
     processed_hosagd = clean_hosagd(hosagd)
     return processed_hosagd[processed_hosagd["no_show"].notna()].copy()
