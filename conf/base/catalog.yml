@@ -6,23 +6,23 @@
 # Raw data files are ignored by Git and must not be committed.
 
 hospac:
-  type: pandas.ParquetDataSet
+  type: pandas.ParquetDataset
   filepath: data/01_raw/hospac.parquet
 
 hosagd:
-  type: pandas.ParquetDataSet
+  type: pandas.ParquetDataset
   filepath: data/01_raw/hosagd.parquet
 
 hosmpi:
-  type: pandas.ParquetDataSet
+  type: pandas.ParquetDataset
   filepath: data/01_raw/hosmpi.parquet
 
 notamedicaurg:
-  type: pandas.ParquetDataSet
+  type: pandas.ParquetDataset
   filepath: data/01_raw/notamedicaurg.parquet
 
 triage:
-  type: pandas.ParquetDataSet
+  type: pandas.ParquetDataset
   filepath: data/01_raw/triage.parquet
 
 # =========================================================
@@ -33,23 +33,23 @@ triage:
 # in data/02_intermediate/.
 
 processed_hospac:
-  type: pandas.ParquetDataSet
+  type: pandas.ParquetDataset
   filepath: data/02_intermediate/processed_hospac.parquet
 
 processed_hosagd:
-  type: pandas.ParquetDataSet
+  type: pandas.ParquetDataset
   filepath: data/02_intermediate/processed_hosagd.parquet
 
 processed_hosmpi:
-  type: pandas.ParquetDataSet
+  type: pandas.ParquetDataset
   filepath: data/02_intermediate/processed_hosmpi.parquet
 
 processed_triage:
-  type: pandas.ParquetDataSet
+  type: pandas.ParquetDataset
   filepath: data/02_intermediate/processed_triage.parquet
 
 processed_notamedicaurg:
-  type: pandas.ParquetDataSet
+  type: pandas.ParquetDataset
   filepath: data/02_intermediate/processed_notamedicaurg.parquet
 
 # =========================================================
@@ -61,13 +61,13 @@ processed_notamedicaurg:
 preprocessed_data_his10:
   # Base dataset for HIS-10 No-Show Guard.
   # One row per appointment with known attendance label.
-  type: pandas.ParquetDataSet
+  type: pandas.ParquetDataset
   filepath: data/03_primary/preprocessed_data_his10.parquet
 
 master_table_his05:
   # Base dataset for HIS-05 saturation / wait-time forecasting.
   # One row per hour with demand, wait-time proxy, and triage features.
-  type: pandas.ParquetDataSet
+  type: pandas.ParquetDataset
   filepath: data/03_primary/master_table_his05.parquet
 
 # =========================================================
@@ -77,11 +77,11 @@ master_table_his05:
 # They are not created by the Data Engineering pipeline.
 
 trained_model_his05:
-  type: pickle.PickleDataSet
+  type: pickle.PickleDataset
   filepath: data/06_models/trained_model_his05.pkl
 
 trained_model_his10:
-  type: pickle.PickleDataSet
+  type: pickle.PickleDataset
   filepath: data/06_models/trained_model_his10.pkl
 
 # =========================================================
@@ -90,9 +90,9 @@ trained_model_his10:
 # Metrics generated later by the Data Science pipelines and stored as JSON.
 
 evaluation_metrics_his05:
-  type: json.JSONDataSet
+  type: json.JSONDataset
   filepath: data/09_tracking/evaluation_metrics_his05.json
 
 evaluation_metrics_his10:
-  type: json.JSONDataSet
+  type: json.JSONDataset
   filepath: data/09_tracking/evaluation_metrics_his10.json

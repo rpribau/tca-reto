@@ -8,3 +8,4 @@ tensorflow
 pyarrow
 kedro
 kedro-datasets
+catboost
