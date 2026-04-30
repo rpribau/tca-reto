@@ -23,16 +23,69 @@ import pandas as pd
 
 def _strip_string_columns(df: pd.DataFrame) -> pd.DataFrame:
     """
-    Strip leading/trailing spaces from text columns and convert empty strings to NA.
+    Strip leading/trailing spaces from text columns, remove control characters,
+    and convert empty strings to NA.
     """
 
     df = df.copy()
 
-    # Raw Assist tables contain many padded strings and blank values.
-    # This standardizes text fields before joins, filtering, and feature creation.
+    # Raw Assist tables contain padded strings, blank values and sometimes
+    # non-printable/control characters. This standardizes text fields before
+    # joins, filtering, and feature creation.
     for col in df.columns:
         if df[col].dtype == "object" or str(df[col].dtype).startswith("string"):
-            df[col] = df[col].astype("string").str.strip().replace("", pd.NA)
+            df[col] = (
+                df[col]
+                .astype("string")
+                .str.replace(r"[\x00-\x1F\x7F]", "", regex=True)
+                .str.strip()
+                .replace("", pd.NA)
+            )
+
+    return df
+
+
+def _normalize_code_columns(df: pd.DataFrame, columns: Iterable[str]) -> pd.DataFrame:
+    """
+    Normalize categorical code-like columns.
+
+    This is used for administrative codes and compact categorical fields where
+    differences in spaces or letter case should not create different categories.
+    """
+
+    df = df.copy()
+
+    for col in columns:
+        if col in df.columns:
+            df[col] = (
+                df[col]
+                .astype("string")
+                .str.replace(r"[\x00-\x1F\x7F]", "", regex=True)
+                .str.strip()
+                .str.upper()
+                .replace("", pd.NA)
+            )
+
+    return df
+
+
+def _replace_noninformative_codes(
+    df: pd.DataFrame,
+    replacements: dict[str, set[str]],
+) -> pd.DataFrame:
+    """
+    Replace non-informative categorical codes with NA.
+
+    These values are not treated as valid categories. Later, in the modeling base,
+    categorical missing values can be represented as UNKNOWN.
+    """
+
+    df = df.copy()
+
+    for col, invalid_values in replacements.items():
+        if col in df.columns:
+            s = df[col].astype("string").str.strip().str.upper()
+            df[col] = s.mask(s.isin(invalid_values), pd.NA)
 
     return df
 
@@ -87,6 +140,7 @@ def _parse_datetime_from_date_time(
 ) -> pd.Series:
     """
     Parse datetime from date column YYYYMMDD and time column HHMMSS/HHMM.
+
     Invalid values become NaT.
     """
 
@@ -114,10 +168,15 @@ def _safe_numeric(series: pd.Series) -> pd.Series:
     Numeric missing values are not imputed here because imputation should be
     decided later by the Data Science/modeling step.
     """
+
     return pd.to_numeric(series.astype("string").str.strip(), errors="coerce")
 
 
-def _add_temporal_features(df: pd.DataFrame, datetime_col: str, prefix: str = "") -> pd.DataFrame:
+def _add_temporal_features(
+    df: pd.DataFrame,
+    datetime_col: str,
+    prefix: str = "",
+) -> pd.DataFrame:
     """
     Add calendar-based features from a datetime column.
 
@@ -130,6 +189,7 @@ def _add_temporal_features(df: pd.DataFrame, datetime_col: str, prefix: str = ""
 
     These features help models capture hourly, daily, and weekly patterns.
     """
+
     df = df.copy()
 
     col_prefix = f"{prefix}_" if prefix else ""
@@ -138,15 +198,21 @@ def _add_temporal_features(df: pd.DataFrame, datetime_col: str, prefix: str = ""
     df[f"{col_prefix}day_of_week"] = df[datetime_col].dt.dayofweek
     df[f"{col_prefix}day"] = df[datetime_col].dt.day
     df[f"{col_prefix}month"] = df[datetime_col].dt.month
-    df[f"{col_prefix}is_weekend"] = df[f"{col_prefix}day_of_week"].isin([5, 6]).astype(int)
+    df[f"{col_prefix}is_weekend"] = (
+        df[f"{col_prefix}day_of_week"].isin([5, 6]).astype(int)
+    )
 
     return df
 
 
-def _fill_categorical_missing(df: pd.DataFrame, columns: Iterable[str]) -> pd.DataFrame:
+def _fill_categorical_missing(
+    df: pd.DataFrame,
+    columns: Iterable[str],
+) -> pd.DataFrame:
     """
     Fill missing categorical columns with 'UNKNOWN'.
     """
+
     df = df.copy()
 
     # For categorical variables, missing values are kept as an explicit category.
@@ -169,7 +235,21 @@ def clean_hospac(hospac: pd.DataFrame) -> pd.DataFrame:
 
     This table is used as a bridge between appointment keys and patient information.
     """
+
     df = _strip_string_columns(hospac)
+
+    df = _normalize_code_columns(
+        df,
+        [
+            "p_area",
+            "p_status",
+            "p_sexo",
+            "p_tpo_pac",
+            "p_tpo_cita",
+            "p_res_cve_num",
+            "p_res_cve_mbo",
+        ],
+    )
 
     # Create normalized join keys.
     # These keys are later used to connect HOSPAC with HOSAGD without duplicating appointments.
@@ -180,9 +260,21 @@ def clean_hospac(hospac: pd.DataFrame) -> pd.DataFrame:
 
     # Parse date/time fields into real datetime columns.
     # These are useful for lead-time features and operational timing analysis.
-    df["reservation_datetime"] = _parse_datetime_from_date_time(df, "p_res_fec", "p_res_hra")
-    df["arrival_datetime"] = _parse_datetime_from_date_time(df, "p_fec_lld", "p_hra_lld")
-    df["registration_datetime"] = _parse_datetime_from_date_time(df, "p_fec_reg", "p_hra_reg")
+    df["reservation_datetime"] = _parse_datetime_from_date_time(
+        df,
+        "p_res_fec",
+        "p_res_hra",
+    )
+    df["arrival_datetime"] = _parse_datetime_from_date_time(
+        df,
+        "p_fec_lld",
+        "p_hra_lld",
+    )
+    df["registration_datetime"] = _parse_datetime_from_date_time(
+        df,
+        "p_fec_reg",
+        "p_hra_reg",
+    )
 
     # Keep only columns required for joins, feature creation, or downstream modeling.
     # This reduces noise from raw operational tables with many unused fields.
@@ -214,7 +306,25 @@ def clean_hosagd(hosagd: pd.DataFrame) -> pd.DataFrame:
     appointment scheduling information and the raw asistencia field used to
     build the no_show target.
     """
+
     df = _strip_string_columns(hosagd)
+
+    df = _normalize_code_columns(
+        df,
+        [
+            "area",
+            "cve_num",
+            "cve_mbo",
+            "med",
+            "esp",
+            "tpo_cita",
+            "conflicto",
+            "agregada",
+            "ultimahora",
+            "buffer",
+            "asistencia",
+        ],
+    )
 
     df["area_key"] = df["area"].astype("string").str.strip()
     df["cve_num_key"] = df["cve_num"].astype("string").str.strip()
@@ -227,13 +337,30 @@ def clean_hosagd(hosagd: pd.DataFrame) -> pd.DataFrame:
 
     df["duration_min"] = _safe_numeric(df["dur"])
 
-    df["asistencia_clean"] = df["asistencia"].astype("string").str.strip().replace("", pd.NA)
+    # Appointment durations must be positive to be informative.
+    # Invalid durations are left as NaN for the modeling stage.
+    df.loc[df["duration_min"] <= 0, "duration_min"] = np.nan
 
     # HIS-10 target construction:
     # A = attended appointment.
     # I = no-show / missed appointment.
-    # Missing asistencia values are NOT imputed because the real outcome is unknown.
-    # Those rows are excluded later from the initial training dataset.
+    # Missing or invalid asistencia values are NOT imputed because the real outcome is unknown.
+    df["asistencia_clean"] = (
+        df["asistencia"]
+        .astype("string")
+        .str.replace(r"[\x00-\x1F\x7F]", "", regex=True)
+        .str.strip()
+        .str.upper()
+        .replace("", pd.NA)
+    )
+
+    df["asistencia_invalid"] = (
+        df["asistencia_clean"].notna()
+        & ~df["asistencia_clean"].isin(["A", "I"])
+    ).astype(int)
+
+    df.loc[~df["asistencia_clean"].isin(["A", "I"]), "asistencia_clean"] = pd.NA
+
     df["no_show"] = df["asistencia_clean"].map({"A": 0, "I": 1})
 
     # Keep only columns required for joins, feature creation, or downstream modeling.
@@ -263,6 +390,7 @@ def clean_hosagd(hosagd: pd.DataFrame) -> pd.DataFrame:
         "ultimahora",
         "buffer",
         "asistencia_clean",
+        "asistencia_invalid",
         "no_show",
     ]
 
@@ -277,7 +405,30 @@ def clean_hosmpi(hosmpi: pd.DataFrame) -> pd.DataFrame:
 
     This table provides demographic enrichment for HIS-10.
     """
+
     df = _strip_string_columns(hosmpi)
+
+    df = _normalize_code_columns(
+        df,
+        [
+            "m_status",
+            "m_sexo",
+            "m_ciu",
+            "m_col",
+            "m_cp",
+            "m_edo",
+            "m_pai",
+        ],
+    )
+
+    df = _replace_noninformative_codes(
+        df,
+        {
+            "m_cp": {"000", "00000", "NA", "N/A", "NULL", "NONE"},
+            "m_edo": {"NA", "N/A", "NULL", "NONE"},
+            "m_pai": {"NA", "N/A", "NULL", "NONE"},
+        },
+    )
 
     # Normalize patient ID to join demographic information with HOSPAC encounters.
     df["m_num_exp_key"] = df["m_num_exp"].astype("string").str.strip()
@@ -286,6 +437,12 @@ def clean_hosmpi(hosmpi: pd.DataFrame) -> pd.DataFrame:
     # The Data Science pipeline can decide whether to impute, filter, or let the model handle NaN.
     if "m_edad" in df.columns:
         df["m_edad_num"] = _safe_numeric(df["m_edad"])
+
+        # Basic impossible age rule from the Data Wrangling findings.
+        df.loc[
+            (df["m_edad_num"] < 0) | (df["m_edad_num"] > 120),
+            "m_edad_num",
+        ] = np.nan
 
     if "m_fec_nac" in df.columns:
         df["m_fec_nac_clean"] = pd.to_datetime(
@@ -320,14 +477,39 @@ def clean_triage(triage: pd.DataFrame) -> pd.DataFrame:
 
     This table is used as optional enrichment for HIS-05 saturation monitoring.
     """
+
     df = _strip_string_columns(triage)
+
+    df = _normalize_code_columns(
+        df,
+        [
+            "Sexo",
+            "Area",
+            "Departamento",
+            "NomDepartamento",
+            "LlegadaServicio",
+            "Destino",
+            "Triage",
+        ],
+    )
 
     df["expediente_key"] = df["Expediente"].astype("string").str.strip()
     df["clave_ingreso_key"] = df["ClaveIngreso"].astype("string").str.strip()
 
     # Triage records are used to enrich HIS-05 with emergency severity volume by hour.
     df["triage_datetime"] = _parse_datetime_from_date_time(df, "Fecha", "Hora")
-    df["triage_clean"] = df["Triage"].astype("string").str.strip().replace("", pd.NA)
+    df["triage_clean"] = df["Triage"].astype("string").str.strip().str.upper().replace("", pd.NA)
+
+    # Expected triage values observed in the Data Wrangling analysis.
+    # Unexpected values are not used to create triage count columns.
+    expected_triage_values = ["A", "C", "E", "M", "N"]
+
+    df["triage_invalid"] = (
+        df["triage_clean"].notna()
+        & ~df["triage_clean"].isin(expected_triage_values)
+    ).astype(int)
+
+    df.loc[~df["triage_clean"].isin(expected_triage_values), "triage_clean"] = pd.NA
 
     # Keep only columns required for joins, feature creation, or downstream modeling.
     # This reduces noise from raw operational tables with many unused fields.
@@ -343,6 +525,7 @@ def clean_triage(triage: pd.DataFrame) -> pd.DataFrame:
         "LlegadaServicio",
         "MotivoConsulta",
         "triage_clean",
+        "triage_invalid",
         "Destino",
         "TiempoEvolucion",
     ]
@@ -364,12 +547,31 @@ def clean_notamedicaurg(notamedicaurg: pd.DataFrame) -> pd.DataFrame:
 
     df = _strip_string_columns(notamedicaurg)
 
+    df = _normalize_code_columns(
+        df,
+        [
+            "Sexo",
+            "Especialidad",
+            "LlegadaServicio",
+            "Triage",
+            "Salida",
+        ],
+    )
+
     df["expediente_key"] = df["Expediente"].astype("string").str.strip()
     df["clave_ingreso_key"] = df["ClaveIngreso"].astype("string").str.strip()
 
-    df["arrival_datetime"] = _parse_datetime_from_date_time(df, "Llegada_Fecha", "Llegada_Hora")
+    df["arrival_datetime"] = _parse_datetime_from_date_time(
+        df,
+        "Llegada_Fecha",
+        "Llegada_Hora",
+    )
     df["note_datetime"] = _parse_datetime_from_date_time(df, "Fecha", "Hora")
-    df["destination_datetime"] = _parse_datetime_from_date_time(df, "Destino_Fecha", "Destino_Hora")
+    df["destination_datetime"] = _parse_datetime_from_date_time(
+        df,
+        "Destino_Fecha",
+        "Destino_Hora",
+    )
 
     # AtMed_Hora is empty in the raw NOTAMEDICAURG table, so the official
     # medical attention timestamp is unavailable.
@@ -429,6 +631,7 @@ def create_his10_base(
 
     Output grain: one row per appointment with known attendance label.
     """
+
     appointments = processed_hosagd.copy()
     encounters = processed_hospac.copy()
     patients = processed_hosmpi.copy()
@@ -468,6 +671,11 @@ def create_his10_base(
         dataset["appointment_datetime"] - dataset["reservation_datetime"]
     ).dt.total_seconds() / (60 * 60 * 24)
 
+    dataset["lead_time_invalid"] = (
+        dataset["lead_time_days"].notna()
+        & (dataset["lead_time_days"] < 0)
+    ).astype(int)
+
     dataset.loc[dataset["lead_time_days"] < 0, "lead_time_days"] = np.nan
 
     # Keep only appointments with known attendance labels.
@@ -502,10 +710,12 @@ def create_his10_base(
         "appointment_month",
         "appointment_is_weekend",
         "lead_time_days",
+        "lead_time_invalid",
         "p_status",
         "p_sexo",
         "p_tpo_pac",
         "p_tpo_cita",
+        "m_status",
         "m_sexo",
         "m_edad_num",
         "m_ciu",
@@ -522,7 +732,11 @@ def create_his10_base(
     categorical_cols = [
         col
         for col in dataset.columns
-        if col != "no_show" and (dataset[col].dtype == "object" or str(dataset[col].dtype).startswith("string"))
+        if col != "no_show"
+        and (
+            dataset[col].dtype == "object"
+            or str(dataset[col].dtype).startswith("string")
+        )
     ]
 
     # Fill only categorical missing values as UNKNOWN.
@@ -569,8 +783,14 @@ def create_his05_master_table(
         urg.groupby("timestamp")
         .agg(
             pacientes_llegando=("arrival_datetime", "size"),
-            tiempo_espera=("wait_proxy_min", lambda s: s[valid_wait.loc[s.index]].mean()),
-            tiempo_espera_mediana=("wait_proxy_min", lambda s: s[valid_wait.loc[s.index]].median()),
+            tiempo_espera=(
+                "wait_proxy_min",
+                lambda s: s[valid_wait.loc[s.index]].mean(),
+            ),
+            tiempo_espera_mediana=(
+                "wait_proxy_min",
+                lambda s: s[valid_wait.loc[s.index]].median(),
+            ),
             wait_proxy_valid_count=("valid_wait_proxy", "sum"),
         )
         .reset_index()
@@ -605,7 +825,8 @@ def create_his05_master_table(
     count_cols = [
         col
         for col in master.columns
-        if col.startswith("triage_") or col in ["triage_events", "pacientes_llegando", "wait_proxy_valid_count"]
+        if col.startswith("triage_")
+        or col in ["triage_events", "pacientes_llegando", "wait_proxy_valid_count"]
     ]
 
     for col in count_cols:
@@ -626,10 +847,14 @@ def create_his05_master_table(
 # The actual Data Engineering pipeline should use the clean_* nodes and the
 # create_his10_base / create_his05_master_table functions above.
 
-def preprocess_hospital_data(hospac: pd.DataFrame, hosmpi: pd.DataFrame) -> pd.DataFrame:
+def preprocess_hospital_data(
+    hospac: pd.DataFrame,
+    hosmpi: pd.DataFrame,
+) -> pd.DataFrame:
     """
     Backward-compatible wrapper from the original placeholder code.
     """
+
     processed_hospac = clean_hospac(hospac)
     processed_hosmpi = clean_hosmpi(hosmpi)
 
@@ -641,7 +866,10 @@ def preprocess_hospital_data(hospac: pd.DataFrame, hosmpi: pd.DataFrame) -> pd.D
     )
 
 
-def create_feature_table_his10(primary_df: pd.DataFrame, hosagd: pd.DataFrame) -> pd.DataFrame:
+def create_feature_table_his10(
+    primary_df: pd.DataFrame,
+    hosagd: pd.DataFrame,
+) -> pd.DataFrame:
     """
     Backward-compatible placeholder wrapper.
 
@@ -649,5 +877,6 @@ def create_feature_table_his10(primary_df: pd.DataFrame, hosagd: pd.DataFrame) -
     This function does not create the full HIS-10 modeling dataset.
     Prefer create_his10_base() in the actual Data Engineering pipeline.
     """
+
     processed_hosagd = clean_hosagd(hosagd)
     return processed_hosagd[processed_hosagd["no_show"].notna()].copy()
