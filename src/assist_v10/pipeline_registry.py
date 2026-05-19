@@ -4,6 +4,8 @@ from typing import Dict
 from kedro.pipeline import Pipeline
 
 from assist_v10.pipelines.data_engineering import pipeline as de
+from assist_v10.pipelines.data_science_his10 import pipeline as ds_his10
+
 
 def register_pipelines() -> Dict[str, Pipeline]:
     """Register the project's pipelines.
@@ -12,8 +14,10 @@ def register_pipelines() -> Dict[str, Pipeline]:
         A mapping from a pipeline name to a ``Pipeline`` object.
     """
     data_engineering_pipeline = de.create_pipeline()
+    data_science_his10_pipeline = ds_his10.create_pipeline()
 
     return {
-        "__default__": data_engineering_pipeline,
+        "__default__": data_engineering_pipeline + data_science_his10_pipeline,
         "data_engineering": data_engineering_pipeline,
+        "data_science_his10": data_science_his10_pipeline,
     }

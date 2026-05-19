@@ -22,3 +22,6 @@ env/
 logs/
 info.log
 errors.log
+
+# MLflow
+mlruns/

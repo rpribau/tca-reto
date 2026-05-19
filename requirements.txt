@@ -9,3 +9,6 @@ pyarrow
 kedro
 kedro-datasets
 catboost
+lightgbm
+optuna
+mlflow
