@@ -27,3 +27,11 @@ class WaitTimeRequest(BaseModel):
 class WaitTimeResponse(BaseModel):
     p_num_exp: str
     tiempo_estimado_minutos: float = Field(..., description="Tiempo estimado de espera en minutos")
+
+
+class SimulationRequest(BaseModel):
+    threshold: float = Field(0.60, description="Umbral de alerta de no-show (0.0 a 1.0)")
+    overbooking_rate: float = Field(15.0, description="Tasa de overbooking (0.0% a 100.0%)")
+    consultation_cost: float = Field(80.0, description="Costo de consulta promedio en USD")
+    hourly_overtime_cost: float = Field(50.0, description="Costo de hora extra promedio en USD")
+

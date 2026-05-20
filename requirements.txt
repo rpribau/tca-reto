@@ -12,3 +12,8 @@ catboost
 lightgbm
 optuna
 mlflow
+xgboost
+fastapi
+uvicorn
+pydantic
+jinja2

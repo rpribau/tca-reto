@@ -1,0 +1,29 @@
+# =========================================================
+# Parameters for data_science_his05 pipeline
+# =========================================================
+# Monitor de Saturación — XGBRegressor sobre master_table_his05
+
+his05:
+  target: "pacientes_llegando"
+
+  # Lags en horas para features de rezago
+  lags: [1, 2, 3, 6, 12, 24]
+
+  # Ventanas de rolling para media/std
+  rolling_windows: [3, 6, 12, 24]
+
+  # Folds para TimeSeriesSplit
+  n_splits: 5
+
+  # Parámetros fijos de XGBoost (no se buscan en grid)
+  fixed_params:
+    objective: "reg:squarederror"
+
+  # Grid de hiperparámetros a buscar
+  param_grid:
+    n_estimators: [300, 500]
+    learning_rate: [0.03, 0.05, 0.10]
+    max_depth: [4, 6]
+    subsample: [0.8]
+    colsample_bytree: [0.7, 0.8]
+    min_child_weight: [3, 5]

@@ -1,0 +1,23 @@
+# =========================================================
+# Docker Compose para Assist v10 API & Dashboard
+# =========================================================
+
+version: '3.8'
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: assist_v10_api
+    ports:
+      - "8000:8000"
+    volumes:
+      # Montar volúmenes locales para desarrollo interactivo y persistencia de modelos/datos
+      - ./data:/app/data
+      - ./conf:/app/conf
+      - ./mlruns:/app/mlruns
+    environment:
+      - ENV=local
+      - PORT=8000
+    restart: unless-stopped
