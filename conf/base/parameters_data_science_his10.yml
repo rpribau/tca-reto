@@ -1,0 +1,15 @@
+# =========================================================
+# Parameters for data_science_his10 pipeline
+# =========================================================
+
+his10:
+  split:
+    test_size: 0.2
+    random_state: 42
+
+  optuna:
+    n_trials: 30
+    experiment_name: "HIS10_NoShow_LightGBM"
+
+  training:
+    threshold: 0.5

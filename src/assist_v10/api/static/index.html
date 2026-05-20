@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Assist v10 — Consola de Dirección Médica</title>
+    <meta name="description" content="Dashboard de gestión y simulación financiera para dirección médica y optimización de capacidad instalada">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+    <link rel="stylesheet" href="/static/css/dashboard.css">
+</head>
+<body>
+    <!-- Sidebar -->
+    <nav class="sidebar" id="sidebar">
+        <div class="sidebar-header">
+            <div class="logo">
+                <span class="logo-icon">🏥</span>
+                <span class="logo-text">Assist <strong>v10</strong></span>
+            </div>
+        </div>
+        <ul class="sidebar-nav">
+            <li class="nav-item active" data-page="overview">
+                <span class="nav-icon">🏥</span>
+                <span class="nav-label">Consola de Staffing (Jefe)</span>
+            </li>
+            <li class="nav-item" data-page="noshow">
+                <span class="nav-icon">💰</span>
+                <span class="nav-label">Simulador Financiero & Agenda</span>
+            </li>
+            <li class="nav-item" data-page="model">
+                <span class="nav-icon">🤖</span>
+                <span class="nav-label">Rendimiento de Modelos</span>
+            </li>
+            <li class="nav-item" data-page="experiments">
+                <span class="nav-icon">🧪</span>
+                <span class="nav-label">Experimentos (Optuna)</span>
+            </li>
+        </ul>
+        <div class="sidebar-footer">
+            <div class="status-badge" id="api-status">
+                <span class="status-dot"></span>
+                <span>API Conectada</span>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Main content -->
+    <main class="main-content">
+        <!-- Header -->
+        <header class="top-header">
+            <div class="header-left">
+                <button class="menu-toggle" id="menu-toggle">☰</button>
+                <h1 id="page-title">Consola de Staffing y Capacidad</h1>
+            </div>
+            <div class="header-right">
+                <span class="last-update" id="last-update">Actualizando...</span>
+                <button class="btn-refresh" id="btn-refresh" title="Actualizar datos">↻</button>
+            </div>
+        </header>
+
+        <!-- Page: Overview / Staffing -->
+        <section class="page active" id="page-overview">
+            <!-- KPI Cards -->
+            <div class="kpi-grid">
+                <div class="kpi-card" id="kpi-ausentismo">
+                    <div class="kpi-header">
+                        <span class="kpi-icon">🚫</span>
+                        <span class="kpi-trend" id="trend-ausentismo">—</span>
+                    </div>
+                    <div class="kpi-value" id="val-ausentismo">—</div>
+                    <div class="kpi-label">Tasa de Ausentismo (No-Show)</div>
+                    <div class="kpi-desc">Citas que se pierden por inasistencias</div>
+                </div>
+
+                <div class="kpi-card" id="kpi-espera">
+                    <div class="kpi-header">
+                        <span class="kpi-icon">⏱️</span>
+                        <span class="kpi-trend" id="trend-espera">—</span>
+                    </div>
+                    <div class="kpi-value" id="val-espera">—</div>
+                    <div class="kpi-label">Tiempo de Espera Promedio</div>
+                    <div class="kpi-desc">Espera en urgencia por saturación</div>
+                </div>
+
+                <div class="kpi-card" id="kpi-utilizacion">
+                    <div class="kpi-header">
+                        <span class="kpi-icon">🏢</span>
+                        <span class="kpi-trend" id="trend-utilizacion">—</span>
+                    </div>
+                    <div class="kpi-value" id="val-utilizacion">—</div>
+                    <div class="kpi-label">Utilización de Consultorios</div>
+                    <div class="kpi-desc">Slots efectivamente ocupados en el hospital</div>
+                </div>
+
+                <div class="kpi-card" id="kpi-satisfaccion">
+                    <div class="kpi-header">
+                        <span class="kpi-icon">💰</span>
+                        <span class="kpi-trend" id="trend-satisfaccion">—</span>
+                    </div>
+                    <div class="kpi-value" id="val-satisfaccion">—</div>
+                    <div class="kpi-label">Ingreso Recuperado Anual</div>
+                    <div class="kpi-desc">Ahorros en horas extras y sobre-agendamiento</div>
+                </div>
+            </div>
+
+            <!-- Staffing Daily Recommendations Alert Box -->
+            <div class="staffing-recommendations-panel" id="staffing-alerts-container">
+                <div class="panel-header">
+                    <h3>📢 Alertas de Saturación y Recomendación de Personal (Staffing Preventivo)</h3>
+                </div>
+                <div class="alerts-list" id="staffing-alerts-list">
+                    <p class="loading-text">Cargando recomendaciones operativas...</p>
+                </div>
+            </div>
+
+            <!-- Staffing Charts -->
+            <div class="charts-row">
+                <div class="chart-card full-width">
+                    <h3 class="chart-title">Carga Operativa Proyectada e Indicación de Staffing (Urgencias)</h3>
+                    <canvas id="chart-util-area"></canvas> <!-- Will render arrival demand vs doctors curve -->
+                </div>
+            </div>
+
+            <div class="charts-row">
+                <div class="chart-card">
+                    <h3 class="chart-title">Ausentismo Promedio por Área</h3>
+                    <canvas id="chart-noshow-area"></canvas>
+                </div>
+                <div class="chart-card">
+                    <h3 class="chart-title">Componentes de Satisfacción de Marca</h3>
+                    <canvas id="chart-satisfaction"></canvas>
+                </div>
+            </div>
+        </section>
+
+        <!-- Page: Business Simulator & No-Show Details -->
+        <section class="page" id="page-noshow">
+            <!-- Simulator Controls Slider Panel -->
+            <div class="simulator-card full-width">
+                <h3 class="chart-title">🎛️ Simulador de Retorno de Inversión (ROI) y Ajuste Operativo</h3>
+                <div class="simulator-sliders-grid">
+                    <div class="slider-group">
+                        <label for="sim-consultation-cost">Costo de Consulta Promedio: <span id="val-sim-cost">$80</span> USD</label>
+                        <input type="range" id="sim-consultation-cost" min="30" max="300" step="5" value="80">
+                        <span class="slider-help">Tarifa base cobrada por cada slot médico agendado</span>
+                    </div>
+                    <div class="slider-group">
+                        <label for="sim-overbooking-rate">Sobre-Agendamiento Inteligente: <span id="val-sim-overbook">15%</span></label>
+                        <input type="range" id="sim-overbooking-rate" min="0" max="40" step="1" value="15">
+                        <span class="slider-help">Slots adicionales programados en horarios de alto no-show</span>
+                    </div>
+                    <div class="slider-group">
+                        <label for="sim-threshold">Sensibilidad de Alerta No-Show (IA): <span id="val-sim-threshold">60%</span></label>
+                        <input type="range" id="sim-threshold" min="30" max="90" step="5" value="60">
+                        <span class="slider-help">Umbral de probabilidad para activar llamadas preventivas</span>
+                    </div>
+                    <div class="slider-group">
+                        <label for="sim-overtime-cost">Costo Hora Extra Médico: <span id="val-sim-overtime">$50</span> USD/hr</label>
+                        <input type="range" id="sim-overtime-cost" min="20" max="150" step="5" value="50">
+                        <span class="slider-help">Tarifa pagada en horas extras en picos reactivos de admisión</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Simulation Outputs Grid -->
+            <div class="charts-row">
+                <div class="chart-card">
+                    <h3 class="chart-title">💰 Impacto de Ingresos Proyectado (Anual)</h3>
+                    <div class="stats-grid">
+                        <div class="stat-item">
+                            <div class="stat-value loss" id="sim-original-loss">$1.6M</div>
+                            <div class="stat-label">Ingreso Perdido Original</div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="stat-value gain" id="sim-recovered-revenue">$400K</div>
+                            <div class="stat-label">Ingreso Recuperado con IA</div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="stat-value" id="sim-overtime-savings">$24K</div>
+                            <div class="stat-label">Ahorro en Horas Extras</div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="stat-value total" id="sim-total-benefit">$424K</div>
+                            <div class="stat-label">Beneficio Neto Anual</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="chart-card">
+                    <h3 class="chart-title">🏥 Eficiencia Operativa y Retención</h3>
+                    <div class="stats-grid">
+                        <div class="stat-item">
+                            <div class="stat-value" id="sim-util-original">74.7%</div>
+                            <div class="stat-label">Utilización Base</div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="stat-value" id="sim-util-optimized">78.5%</div>
+                            <div class="stat-label">Utilización Optimizada</div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="stat-value" id="sim-nps-impact">+5.0 pts</div>
+                            <div class="stat-label">Mejora en NPS</div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="stat-value" id="sim-util-change">+3.8%</div>
+                            <div class="stat-label">Ganancia de Capacidad</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Core Charts of No-Show page -->
+            <div class="charts-row">
+                <div class="chart-card">
+                    <h3 class="chart-title">Tendencia Mensual del Ausentismo (No-Show)</h3>
+                    <canvas id="chart-noshow-month"></canvas>
+                </div>
+                <div class="chart-card">
+                    <h3 class="chart-title">Ausentismo Promedio por Día de la Semana</h3>
+                    <canvas id="chart-noshow-day"></canvas>
+                </div>
+            </div>
+
+            <div class="charts-row">
+                <div class="chart-card full-width">
+                    <h3 class="chart-title">Top 10 Especialidades Médicas con Mayor Saturación / Ausentismo</h3>
+                    <canvas id="chart-noshow-specialty"></canvas>
+                </div>
+            </div>
+        </section>
+
+        <!-- Page: Technical Model Metrics -->
+        <section class="page" id="page-model">
+            <div class="charts-row">
+                <div class="chart-card">
+                    <h3 class="chart-title">Métricas de Clasificación del Modelo HIS-10 (No-Show Guard)</h3>
+                    <canvas id="chart-model-metrics"></canvas>
+                </div>
+                <div class="chart-card">
+                    <h3 class="chart-title">Matriz de Confusión</h3>
+                    <div class="confusion-matrix" id="confusion-matrix">
+                        <table class="cm-table">
+                            <thead>
+                                <tr><th></th><th>Pred: Asiste</th><th>Pred: No-Show</th></tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td class="cm-label">Real: Asiste</td>
+                                    <td class="cm-tn" id="cm-tn">—</td>
+                                    <td class="cm-fp" id="cm-fp">—</td>
+                                </tr>
+                                <tr>
+                                    <td class="cm-label">Real: No-Show</td>
+                                    <td class="cm-fn" id="cm-fn">—</td>
+                                    <td class="cm-tp" id="cm-tp">—</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    <div class="model-info" id="model-info"></div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Page: MLOps Experiments -->
+        <section class="page" id="page-experiments">
+            <div class="charts-row">
+                <div class="chart-card full-width">
+                    <h3 class="chart-title">Historial de Optimización del Hiperparámetros de Optuna (ROC-AUC)</h3>
+                    <canvas id="chart-optuna-auc"></canvas>
+                </div>
+            </div>
+            <div class="charts-row">
+                <div class="chart-card full-width">
+                    <h3 class="chart-title">Detalle Clínico de Experimentos Realizados</h3>
+                    <div class="table-container" id="trials-table-container">
+                        <p class="loading-text">Cargando experimentos...</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <script src="/static/js/dashboard.js"></script>
+</body>
+</html>
