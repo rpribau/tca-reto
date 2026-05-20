@@ -81,7 +81,24 @@ def preprocess_features(preprocessed_data: pd.DataFrame) -> pd.DataFrame:
     df["agregada"] = np.where(df["agregada"] == "A", 1, 0)
     df["ultimahora"] = np.where(df["ultimahora"] == "U", 1, 0)
 
-    # 3. String cleaning, zero-padding and frequency masking -------------
+    # 3. Codificación cíclica para variables temporales ------------------
+    # Diccionario con la variable y su período máximo (el ciclo completo)
+    cyclical_cols = {
+        'appointment_month': 12,
+        'appointment_day': 31,
+        'appointment_day_of_week': 7,
+        'appointment_hour': 24
+    }
+    
+    for col, max_val in cyclical_cols.items():
+        # Aplicar seno y coseno
+        df[f'{col}_sin'] = np.sin(2 * np.pi * df[col] / max_val)
+        df[f'{col}_cos'] = np.cos(2 * np.pi * df[col] / max_val)
+        
+        # Eliminar la columna original para no duplicar información
+        df.drop(columns=[col], inplace=True)
+
+    # 4. String cleaning, zero-padding and frequency masking -------------
     def _clean_pad_and_mask(
         col_name: str,
         pad_len: int,
@@ -143,8 +160,7 @@ def preprocess_features(preprocessed_data: pd.DataFrame) -> pd.DataFrame:
 
     # 4. One-Hot Encoding ------------------------------------------------
     cols_to_ohe = [
-        "area", "med", "esp", "buffer", "appointment_hour", "tpo_cita",
-        "appointment_day_of_week", "appointment_day", "appointment_month",
+        "area", "med", "esp", "buffer", "tpo_cita",
         "p_sexo", "p_tpo_pac", "m_ciu", "m_col", "m_cp", "m_edo", "m_pai",
     ]
     df = pd.get_dummies(df, columns=cols_to_ohe, dtype=int)
