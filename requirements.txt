@@ -17,3 +17,7 @@ fastapi
 uvicorn
 pydantic
 jinja2
+streamlit
+plotly
+sqlalchemy
+bcrypt
